@@ -1,48 +1,61 @@
+# Investigación: Implementación de Laboratorios Avanzados con GNS3 y Hipervisores
+
+![Estado](https://img.shields.io/badge/Estado-Completado-green) ![Plataforma](https://img.shields.io/badge/Plataforma-GNS3%20%2B%20Windows11-blue)
+
+Este repositorio contiene la investigación técnica sobre la integración de GNS3 con hipervisores de Tipo 1 (ESXi) y Tipo 2 (VirtualBox) sobre un entorno de Windows 11.
+
+---
+
 ## 1. Arquitectura de Virtualización en Windows 11
 
 ### Aislamiento de Núcleo y VBS
-Windows 11 introduce la Seguridad basada en Virtualización (VBS). Esta función utiliza el hipervisor nativo Hyper-V para crear una región de memoria aislada.
-* **Impacto técnico:** Al estar activo, Hyper-V toma el control exclusivo de las extensiones de hardware (VT-x/AMD-V). Esto impide que otros hipervisores de Tipo 2 (como VirtualBox) accedan a la aceleración de hardware, provocando que la GNS3 VM no pueda ejecutar KVM.
+Windows 11 utiliza **VBS (Virtualization-Based Security)** para crear una región de memoria aislada del sistema operativo. 
+* **Impacto:** Esta función utiliza Hyper-V de forma silenciosa. Si está activa, Hyper-V "secuestra" las extensiones de hardware (VT-x/AMD-V), impidiendo que la GNS3 VM pueda activar la aceleración KVM, lo que resulta en un rendimiento extremadamente pobre.
 
 ### Activación de VT-x/AMD-V
-1. **BIOS/UEFI:** Es el primer paso obligatorio para habilitar el soporte de virtualización a nivel de silicio.
-2. **Verificación en OS:** Se confirma mediante el Administrador de Tareas o ejecutando `systeminfo` en el CMD. Si aparece como "Habilitado", el sistema operativo ya puede delegar funciones de virtualización.
+Para habilitar el soporte de hardware:
+1. Se debe acceder a la **BIOS/UEFI** del equipo y activar "Intel Virtualization Technology" o "SVM Mode".
+2. En Windows 11, se verifica en el **Administrador de Tareas > Rendimiento > CPU**, donde debe figurar "Virtualización: Habilitado".
+
+![Verificación de Virtualización](img/verificacion-cpu.png)
 
 ---
 
 ## 2. GNS3 VM: El Motor de Simulación
 
 ### KVM (Kernel-based Virtual Machine)
-KVM es una tecnología de virtualización de código abierto integrada en Linux.
-* **Por qué es obligatorio:** Permite que la GNS3 VM actúe como un hipervisor de Tipo 1 para los nodos internos. Sin "KVM: True", los dispositivos QEMU/KVM (como routers Cisco modernos) funcionan por emulación de software, lo cual es ineficiente y extremadamente lento.
+KVM es el módulo de virtualización para el kernel de Linux que permite a la GNS3 VM actuar como un hipervisor nativo.
+* **Por qué es obligatorio:** Sin KVM (estado "True"), los nodos de red como routers Cisco IOSv o ASAv emulan la CPU por software. Con KVM "True", los procesos corren directamente sobre el hardware del host, permitiendo laboratorios fluidos y profesionales.
 
 ### Configuración de Recursos
-Para un rendimiento profesional en Windows 11:
-* **CPU:** Se recomienda asignar **2 vCPUs** como mínimo.
-* **RAM:** **4 GB** es el estándar base. Es crítico no asignar más del 50% de la RAM física para evitar el "swapping" en Windows 11, lo cual congelaría la interfaz de GNS3.
+Para no desestabilizar Windows 11, se recomienda:
+* **CPU:** Asignar 2 vCPUs (o el 50% de los hilos lógicos).
+* **RAM:** Al menos 4GB, asegurándose de dejar 4GB libres para el sistema host para evitar el uso de memoria virtual (swap) en disco.
 
 ---
 
 ## 3. Integración con VirtualBox (Local)
 
 ### Configuración de Red
-Se utiliza el adaptador **Host-Only (Sólo-Anfitrión)**. Este crea una red virtual interna entre el host (Windows) y la VM, permitiendo que la GUI de GNS3 envíe instrucciones a la API del servidor sin depender de una conexión física de red.
+Se utiliza el adaptador **Host-Only** (Solo-Anfitrión) para establecer un canal de comunicación privado entre la GUI de GNS3 y la VM. Esto evita conflictos con otras redes físicas y asegura que la IP de la VM sea constante.
 
 ### Modo Promiscuo
-* **Explicación Técnica:** Las redes de datos reales utilizan tramas con diversas direcciones MAC. Por defecto, VirtualBox descarta cualquier trama que no vaya dirigida a la MAC de la VM. Al activar el **Modo Promiscuo (Allow All)**, el puente virtual permite el paso de todo el tráfico de Capa 2, permitiendo que protocolos como STP y ARP funcionen correctamente en el laboratorio.
+* **Análisis Técnico:** Es necesario cambiar el modo promiscuo a **"Permitir todo"**. Las redes de GNS3 operan en Capa 2; sin este modo, VirtualBox descartaría cualquier trama Ethernet que no tenga como destino la dirección MAC propia de la VM, rompiendo la comunicación entre los routers virtuales.
 
 ---
 
 ## 4. Integración con VMware ESXi (Remoto)
 
 ### Arquitectura Cliente-Servidor
-A diferencia de la instalación local, aquí la carga de cómputo se desplaza a un servidor dedicado. La laptop solo corre el "Front-end", conectándose vía TCP/IP al servidor ESXi que aloja las instancias de los nodos.
+En esta modalidad, la Laptop actúa como cliente (GUI) y el servidor ESXi físico actúa como el motor de ejecución. Se conectan mediante la IP del servidor ESXi a través del puerto **3080**.
+
+![Diagrama de Arquitectura](img/diagrama-red.png)
 
 ### Seguridad en vSwitch
-En el Port Group de ESXi, es imperativo cambiar las políticas de seguridad a **Accept**:
-1. **Modo Promiscuo:** Para el análisis de tráfico.
-2. **Cambios de dirección MAC:** Para que los routers virtuales puedan generar sus propias direcciones.
-3. **Transmisiones falsificadas:** Para permitir que las tramas salgan con MACs distintas a la principal del adaptador.
+En el **Port Group** de ESXi donde reside la GNS3 VM, se deben cambiar las políticas de seguridad a **Accept**:
+* **Promiscuous mode:** Permite que los nodos vean tráfico que no les pertenece.
+* **MAC address changes:** Permite que los routers virtuales cambien su MAC para protocolos de redundancia.
+* **Forged transmits:** Permite el envío de tráfico con MACs distintas a la del adaptador principal.
 
 ---
 
@@ -50,6 +63,12 @@ En el Port Group de ESXi, es imperativo cambiar las políticas de seguridad a **
 
 | Error Detectado | Causa Técnica | Solución Implementada |
 | :--- | :--- | :--- |
-| **GNS3 VM: KVM False** | Conflicto con "Integridad de Memoria" de Windows 11. | Desactivar Aislamiento de Núcleo y reiniciar el sistema. |
-| **uBridge permissions** | Falta de privilegios para crear interfaces de red virtuales. | Ejecutar GNS3 como Administrador o reinstalar Npcap. |
-| **Connection Timeout (3080)** | Firewall de Windows bloqueando el tráfico hacia la VM. | Crear regla de entrada para el puerto TCP 3080 en el Firewall. |
+| **KVM support: False** | Conflicto con Hyper-V / Core Isolation en Windows 11. | Desactivar "Integridad de Memoria" en Seguridad de Windows y reiniciar. |
+| **uBridge permissions** | El servicio uBridge requiere privilegios elevados para interceptar tráfico. | Ejecutar GNS3 como Administrador o reinstalar Npcap. |
+| **Connection Timeout (3080)** | El Firewall de Windows o del Servidor bloquea el puerto de la API. | Crear una regla de entrada para permitir tráfico TCP en el puerto 3080. |
+
+---
+
+## Recursos Adicionales
+* [Documentación Oficial de GNS3](https://docs.gns3.com/)
+* [Guía de Seguridad en vSwitch de VMware](https://docs.vmware.com/)
