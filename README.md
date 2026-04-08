@@ -17,7 +17,7 @@ Para habilitar el soporte de hardware:
 1. Se debe acceder a la **BIOS/UEFI** del equipo y activar "Intel Virtualization Technology" o "SVM Mode".
 2. En Windows 11, se verifica en el **Administrador de Tareas > Rendimiento > CPU**, donde debe figurar "Virtualización: Habilitado".
 
-![Verificación de Virtualización](img/verificacion-cpu.png)
+[![Verificación de Virtualización](img/verificacion-cpu.png)](https://lucid.app/lucidchart/352ebc68-0604-4b30-ab28-6d233ec0f057/edit?viewport_loc=595%2C107%2C1792%2C895%2C0_0&invitationId=inv_6789ae8c-5d1b-45a4-8fc7-d1fb46f8679c)
 
 ---
 
